@@ -210,7 +210,6 @@ let gameScore = 0;
 // Camera state
 let camRotation = 0;
 let flipX = true; // Mirror by default for selfie
-let cameraInstance = null;
 let showPreview = false;
 let lastHandResults = null;
 const processCanvas = document.createElement('canvas');
@@ -255,13 +254,17 @@ window.toggleFlipX = function() {
 document.getElementById('btn-flipx').classList.add('active');
 
 // =============================================
-// CAMERA MANAGEMENT
+// CAMERA MANAGEMENT (manual getUserMedia + frame loop)
 // =============================================
+let activeStream = null;
+let frameLoopRunning = false;
+
 async function getCameras() {
     try {
-        // Prompt permission
+        // Prompt permission with a temp stream, then release
         const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
         tempStream.getTracks().forEach(t => t.stop());
+        await new Promise(r => setTimeout(r, 300));
 
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
@@ -272,7 +275,7 @@ async function getCameras() {
             option.value = device.deviceId;
             let label = device.label || `Camera ${index + 1}`;
             label = label.replace(/\s*\(.*?\)\s*/g, ' ').trim();
-            if (label.length > 22) label = label.substring(0, 20) + '…';
+            if (label.length > 22) label = label.substring(0, 20) + '\u2026';
             option.text = label;
             camSelect.appendChild(option);
         });
@@ -281,91 +284,56 @@ async function getCameras() {
         const frontCam = videoDevices.find(d => d.label.toLowerCase().includes('front'));
         if (frontCam) camSelect.value = frontCam.deviceId;
 
-        camSelect.addEventListener('change', () => {
-            startCamera(camSelect.value);
-        });
+        camSelect.addEventListener('change', () => startCamera(camSelect.value));
 
         startCamera(camSelect.value || (videoDevices[0] && videoDevices[0].deviceId));
     } catch(err) {
         console.error('Camera init error:', err);
         statusEl.textContent = 'CAM ERR: ' + err.name;
-        alert('Failed to acquire camera feed: ' + err.name + ': ' + err.message);
     }
 }
 
-function startCamera(deviceId) {
-    // Stop existing camera
-    if (cameraInstance) {
-        try { cameraInstance.stop(); } catch(e) {}
-        cameraInstance = null;
+async function startCamera(deviceId) {
+    // Stop existing stream
+    if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+        videoElement.srcObject = null;
+        activeStream = null;
+        await new Promise(r => setTimeout(r, 400));
     }
 
     statusEl.textContent = 'Starting camera...';
 
-    const constraints = deviceId
-        ? { deviceId: { exact: deviceId } }
-        : { facingMode: 'user' };
+    const constraints = {
+        video: deviceId
+            ? { deviceId: { exact: deviceId }, width: { ideal: isMobile ? 640 : 1280 }, height: { ideal: isMobile ? 480 : 720 } }
+            : { facingMode: 'user', width: { ideal: isMobile ? 640 : 1280 }, height: { ideal: isMobile ? 480 : 720 } }
+    };
 
-    cameraInstance = new Camera(videoElement, {
-        onFrame: async () => {
-            try {
-                if (camRotation === 0) {
-                    await hands.send({ image: videoElement });
-                } else {
-                    const vw = videoElement.videoWidth;
-                    const vh = videoElement.videoHeight;
-                    if (!vw || !vh) return;
+    try {
+        activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch(e1) {
+        // Fallback without exact
+        try {
+            activeStream = await navigator.mediaDevices.getUserMedia({ video: deviceId ? { deviceId: deviceId } : { facingMode: 'user' } });
+        } catch(e2) {
+            statusEl.textContent = 'CAM ERR: ' + e2.name;
+            return;
+        }
+    }
 
-                    if (camRotation === 90 || camRotation === 270) {
-                        processCanvas.width = vh;
-                        processCanvas.height = vw;
-                    } else {
-                        processCanvas.width = vw;
-                        processCanvas.height = vh;
-                    }
+    videoElement.srcObject = activeStream;
+    await videoElement.play();
+    statusEl.textContent = `Searching... (${camRotation}\u00B0)`;
 
-                    processCtx.save();
-                    processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
-                    processCtx.rotate(camRotation * Math.PI / 180);
-                    processCtx.drawImage(videoElement, -vw / 2, -vh / 2, vw, vh);
-                    processCtx.restore();
-
-                    await hands.send({ image: processCanvas });
-                }
-            } catch(e) {
-                // Silently handle frame errors to prevent crash loops
-            }
-        },
-        width: isMobile ? 640 : 1280,
-        height: isMobile ? 480 : 720,
-        facingMode: undefined // We control via deviceId
-    });
-
-    // Override the video constraints to use our deviceId
-    videoElement.srcObject = null;
-    navigator.mediaDevices.getUserMedia({ video: constraints })
-        .then(stream => {
-            videoElement.srcObject = stream;
-            videoElement.play();
-            statusEl.textContent = `Searching... (${camRotation}\u00B0)`;
-        })
-        .catch(err => {
-            console.error('Camera start error:', err);
-            statusEl.textContent = 'CAM ERR: ' + err.name;
-        });
-
-    // Also start the Camera utility for the frame loop
-    cameraInstance.start().catch(err => {
-        console.warn('Camera utility start error, using manual loop', err);
-        // Fallback: manual frame loop
-        startManualFrameLoop();
-    });
+    // Start frame loop if not already running
+    if (!frameLoopRunning) {
+        frameLoopRunning = true;
+        sendFrameLoop();
+    }
 }
 
-let manualLoopRunning = false;
-function startManualFrameLoop() {
-    if (manualLoopRunning) return;
-    manualLoopRunning = true;
+async function sendFrameLoop() {
     async function loop() {
         if (videoElement.readyState >= 2) {
             try {
@@ -380,14 +348,14 @@ function startManualFrameLoop() {
                             processCanvas.width = vw; processCanvas.height = vh;
                         }
                         processCtx.save();
-                        processCtx.translate(processCanvas.width/2, processCanvas.height/2);
+                        processCtx.translate(processCanvas.width / 2, processCanvas.height / 2);
                         processCtx.rotate(camRotation * Math.PI / 180);
-                        processCtx.drawImage(videoElement, -vw/2, -vh/2, vw, vh);
+                        processCtx.drawImage(videoElement, -vw / 2, -vh / 2, vw, vh);
                         processCtx.restore();
                         await hands.send({ image: processCanvas });
                     }
                 }
-            } catch(e) {}
+            } catch(e) { /* silently skip bad frames */ }
         }
         requestAnimationFrame(loop);
     }
