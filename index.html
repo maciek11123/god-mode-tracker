@@ -290,7 +290,7 @@
     var worldGroup = new THREE.Group();
     scene.add(worldGroup);
     var camera = new THREE.PerspectiveCamera(75, W/H, 0.1, 2000);
-    var renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: false });
+    var renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
 
@@ -635,8 +635,8 @@
             }
             } catch(err) { debugLastError = err.message || err.name || 'unknown'; }
         },
-        width: isMobile ? 640 : 1280,
-        height: isMobile ? 480 : 720,
+        width: 1280,
+        height: 720,
         facingMode: 'user'
     });
     cameraInstance.start();
