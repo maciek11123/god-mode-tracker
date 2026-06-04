@@ -506,7 +506,10 @@
     function animate(){
         requestAnimationFrame(animate);
         var now=performance.now();var dt=Math.min((now-lastFrameTime)/1000,0.05);lastFrameTime=now;time+=dt;
-        frameCount++;if(frameCount%60===0){fpsEl.innerText=Math.round(1/dt);}
+        frameCount++;if(frameCount%30===0){
+            fpsEl.innerText=Math.round(1/dt);
+            inputModeEl.textContent='F:'+debugFramesSent+' R:'+debugResultsReceived+(debugLastError?' ERR:'+debugLastError:'');
+        }
         if(currentCategory==='world'&&activeWorld){
             var t_scale=s_scale,t_rotZ=s_rotZ,t_rotX=s_rotX,t_rotY=s_rotY;
             if(gesture.count===2){t_scale=Math.max(0.1,gesture.zoom*3.5);t_rotZ=gesture.angle;t_rotX=(gesture.midY-.5)*Math.PI;t_rotY=(gesture.midX-.5)*Math.PI;}
@@ -550,11 +553,17 @@
         drawPreview(lastHandResults);
     }
 
+    // === DEBUG ===
+    var debugFramesSent = 0;
+    var debugResultsReceived = 0;
+    var debugLastError = '';
+
     // === HAND TRACKING (identical pattern to user's proven working code) ===
     function checkFist(lm){var wr=lm[0],sum=0;[8,12,16,20].forEach(function(idx){sum+=Math.hypot(lm[idx].x-wr.x,lm[idx].y-wr.y);});return(sum/4)<0.25;}
 
     function onResults(results){
         lastHandResults = results;
+        debugResultsReceived++;
         if (inputSource !== 'hands') return;
         gesture.count=0;gesture.h1=null;gesture.h2=null;gesture.fist=false;
         if(results.multiHandLandmarks&&results.multiHandLandmarks.length>0){
@@ -587,9 +596,11 @@
     // === CAMERA BOOT (exact same pattern as user's proven working code) ===
     var cameraInstance = new Camera(videoElement, {
         onFrame: async function() {
-            if (camRotation === 0) {
-                await hands.send({image: videoElement});
-            } else {
+            debugFramesSent++;
+            try {
+                if (camRotation === 0) {
+                    await hands.send({image: videoElement});
+                } else {
                 var vw = videoElement.videoWidth, vh = videoElement.videoHeight;
                 if (!vw || !vh) return;
                 if (camRotation === 90 || camRotation === 270) { processCanvasEl.width = vh; processCanvasEl.height = vw; }
@@ -601,6 +612,7 @@
                 processCtxEl.restore();
                 await hands.send({image: processCanvasEl});
             }
+            } catch(err) { debugLastError = err.message || err.name || 'unknown'; }
         },
         width: isMobile ? 640 : 1280,
         height: isMobile ? 480 : 720,
