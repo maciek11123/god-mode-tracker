@@ -611,7 +611,7 @@
 
     // === MEDIAPIPE INIT (exact same pattern as user's proven working code) ===
     var hands = new Hands({locateFile: function(file) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file; }});
-    hands.setOptions({ maxNumHands: 2, modelComplexity: isMobile ? 0 : 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     hands.onResults(onResults);
 
     // === CAMERA BOOT (exact same pattern as user's proven working code) ===
