@@ -475,7 +475,7 @@
     // === CAMERA PREVIEW + SKELETON ===
     var HAND_CONNS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
     function drawPreview(results) {
-        if (!showPreview || !results) return;
+        if (!showPreview) return;
         var vw = videoElement.videoWidth, vh = videoElement.videoHeight;
         if (!vw || !vh) return;
         previewCanvas.width = 200; previewCanvas.height = 150;
@@ -483,22 +483,43 @@
         if (flipX) { previewCtx.translate(200, 0); previewCtx.scale(-1, 1); }
         previewCtx.drawImage(videoElement, 0, 0, 200, 150);
         previewCtx.restore();
-        if (results.multiHandLandmarks) {
+        // Draw skeleton if we have hand data
+        if (results && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             for (var h = 0; h < results.multiHandLandmarks.length; h++) {
                 var lm = results.multiHandLandmarks[h];
-                previewCtx.strokeStyle = 'rgba(0,255,120,0.7)'; previewCtx.lineWidth = 1.5;
+                if (!lm || lm.length < 21) continue;
+                // Draw connections
+                previewCtx.strokeStyle = '#00ff78';
+                previewCtx.lineWidth = 2;
                 for (var c = 0; c < HAND_CONNS.length; c++) {
-                    var a = HAND_CONNS[c][0], b = HAND_CONNS[c][1];
-                    var ax = flipX ? (1-lm[a].x)*200 : lm[a].x*200, ay = lm[a].y*150;
-                    var bx = flipX ? (1-lm[b].x)*200 : lm[b].x*200, by = lm[b].y*150;
-                    previewCtx.beginPath(); previewCtx.moveTo(ax,ay); previewCtx.lineTo(bx,by); previewCtx.stroke();
+                    var ai = HAND_CONNS[c][0], bi = HAND_CONNS[c][1];
+                    var ax = flipX ? (1-lm[ai].x)*200 : lm[ai].x*200;
+                    var ay = lm[ai].y*150;
+                    var bx = flipX ? (1-lm[bi].x)*200 : lm[bi].x*200;
+                    var by = lm[bi].y*150;
+                    previewCtx.beginPath();
+                    previewCtx.moveTo(ax, ay);
+                    previewCtx.lineTo(bx, by);
+                    previewCtx.stroke();
                 }
+                // Draw joints
+                previewCtx.fillStyle = '#ff4444';
                 for (var p = 0; p < lm.length; p++) {
-                    var px = flipX ? (1-lm[p].x)*200 : lm[p].x*200, py = lm[p].y*150;
-                    previewCtx.beginPath(); previewCtx.arc(px,py,2.5,0,Math.PI*2);
-                    previewCtx.fillStyle='#00ff78'; previewCtx.fill();
+                    var px = flipX ? (1-lm[p].x)*200 : lm[p].x*200;
+                    var py = lm[p].y*150;
+                    previewCtx.beginPath();
+                    previewCtx.arc(px, py, 3, 0, Math.PI*2);
+                    previewCtx.fill();
                 }
             }
+            // Show hand count on preview
+            previewCtx.fillStyle = '#00ff78';
+            previewCtx.font = '12px monospace';
+            previewCtx.fillText('HANDS: ' + results.multiHandLandmarks.length, 5, 12);
+        } else {
+            previewCtx.fillStyle = '#ff4444';
+            previewCtx.font = '12px monospace';
+            previewCtx.fillText('NO HANDS', 5, 12);
         }
     }
 
@@ -512,8 +533,8 @@
         }
         if(currentCategory==='world'&&activeWorld){
             var t_scale=s_scale,t_rotZ=s_rotZ,t_rotX=s_rotX,t_rotY=s_rotY;
-            if(gesture.count===2){t_scale=Math.max(0.1,gesture.zoom*3.5);t_rotZ=gesture.angle;t_rotX=(gesture.midY-.5)*Math.PI;t_rotY=(gesture.midX-.5)*Math.PI;}
-            else if(gesture.count===1){}
+            if(gesture.count===2&&gesture.dist>0.08){t_scale=Math.max(0.3,Math.min(5,gesture.zoom*3.5));t_rotZ=gesture.angle;t_rotX=(gesture.midY-.5)*Math.PI;t_rotY=(gesture.midX-.5)*Math.PI;}
+            else if(gesture.count>=1){}
             else{t_scale=1;if(currentMode==='alien'||currentMode==='heavy'){t_rotX=s_rotX+.003;t_rotY=s_rotY+.005;}}
             s_scale+=(t_scale-s_scale)*.06;
             var drZ=t_rotZ-s_rotZ;while(drZ>Math.PI)drZ-=Math.PI*2;while(drZ<-Math.PI)drZ+=Math.PI*2;s_rotZ+=drZ*.09;
