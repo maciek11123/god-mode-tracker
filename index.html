@@ -615,6 +615,19 @@
     hands.onResults(onResults);
 
     // === CAMERA BOOT (exact same pattern as user's proven working code) ===
+    // Suppress Camera utility's built-in alert on error
+    var _origAlert = window.alert;
+    window.alert = function(msg) {
+        if (typeof msg === 'string' && msg.indexOf('camera') > -1 || msg.indexOf('video') > -1 || msg.indexOf('Failed') > -1) {
+            statusEl.textContent = 'CAM ERR (tap to retry)';
+            statusEl.style.color = '#ff4444';
+            statusEl.style.pointerEvents = 'auto';
+            statusEl.style.cursor = 'pointer';
+            statusEl.onclick = function() { location.reload(); };
+            return;
+        }
+        _origAlert.call(window, msg);
+    };
     var cameraInstance = new Camera(videoElement, {
         onFrame: async function() {
             debugFramesSent++;
@@ -635,8 +648,8 @@
             }
             } catch(err) { debugLastError = err.message || err.name || 'unknown'; }
         },
-        width: 1280,
-        height: 720,
+        width: isMobile ? 960 : 1280,
+        height: isMobile ? 540 : 720,
         facingMode: 'user'
     });
     cameraInstance.start();
